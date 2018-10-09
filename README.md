@@ -7,3 +7,6 @@ Room mapping and floor plan generation
 * pyrealsense
 * opencvpython
 * numpy
+* numba
+* scipy
+* pandas

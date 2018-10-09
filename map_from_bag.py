@@ -25,7 +25,7 @@ def get_pointcloud(depth_image, color_image):
     points3d = points3d.view(np.float32).reshape(points3d.shape + (-1,))
 
     # Remove all invalid data within a certain distance
-    distance_mask = points3d[:, 2] > 300
+    distance_mask = points3d[:, 2] > 3
     points3d = points3d[distance_mask]
 
     return points3d
@@ -61,9 +61,6 @@ def play_bag(filename):
             # If their is either no depth or color frame try again
             if not depth_frame or not color_frame:
                 continue
-            # if not color_frame:
-            #     continue
-
 
             # Get data as numpy arrays
             depth_data = np.asanyarray(depth_frame.as_frame().get_data())
@@ -77,12 +74,12 @@ def play_bag(filename):
                 cv2.COLORMAP_JET
             )
 
-            # images = np.hstack((color_data, depth_colormap))
+            images = np.hstack((get_ORB(color_data), depth_colormap))
 
             cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
-            pc, points = get_pointcloud(depth_frame, color_frame)
-            # print(points)
-            cv2.imshow('RealSense', get_ORB(color_data))
+            points = get_pointcloud(depth_frame, color_frame)
+            print(points)
+            cv2.imshow('RealSense', images)
             # cv2.imshow('Realsense', depth_colormap)
             cv2.waitKey(1)
     finally:
