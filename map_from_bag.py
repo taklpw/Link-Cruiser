@@ -13,12 +13,22 @@ def get_ORB(image):
 
 
 def get_pointcloud(depth_image, color_image):
-    pc = rs.pointcloud(depth_image)
+    pc = rs.pointcloud()
+    points = rs.points()
+
+    # Obtain point cloud data
     pc.map_to(color_image)
     points = pc.calculate(depth_image)
-    vtx = np.asanyarray(points.get_verticies())
-    tex = np.asanyarray(points.get_texture_coordinates())
-    return pc
+
+    # Convert point cloud to 2d Array
+    points3d = np.asanyarray(points.get_vertices())
+    points3d = points3d.view(np.float32).reshape(points3d.shape + (-1,))
+
+    # Remove all invalid data within a certain distance
+    distance_mask = points3d[:, 2] > 300
+    points3d = points3d[distance_mask]
+
+    return points3d
 
 
 def play_bag(filename):
@@ -58,21 +68,22 @@ def play_bag(filename):
             # Get data as numpy arrays
             depth_data = np.asanyarray(depth_frame.as_frame().get_data())
             color_data = np.asanyarray(color_frame.as_frame().get_data())
-            color_data = cv2.resize(color_data, (1280, 720))
+            # color_data = cv2.resize(color_data, (1280, 720))
             color_data = cv2.cvtColor(color_data, cv2.COLOR_RGB2BGR)
 
             # Display depth frame
-            # depth_colormap = cv2.applyColorMap(
-            #     cv2.convertScaleAbs(depth_data, alpha=0.03),
-            #     cv2.COLORMAP_JET
-            # )
+            depth_colormap = cv2.applyColorMap(
+                cv2.convertScaleAbs(depth_data, alpha=0.08),
+                cv2.COLORMAP_JET
+            )
 
             # images = np.hstack((color_data, depth_colormap))
 
             cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
-            # rs.draw_pointcloud(get_pointcloud(depth_data, color_data))
+            pc, points = get_pointcloud(depth_frame, color_frame)
+            # print(points)
             cv2.imshow('RealSense', get_ORB(color_data))
-            # print(get_pointcloud(depth_data, color_data))
+            # cv2.imshow('Realsense', depth_colormap)
             cv2.waitKey(1)
     finally:
         pipeline.stop()
