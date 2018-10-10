@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import pyrealsense2 as rs
+import pandas as pd
 
 
 def get_ORB(image):
@@ -13,12 +14,12 @@ def get_ORB(image):
 
 
 def get_pointcloud(depth_image, color_image):
-    pc = rs.pointcloud()
+    point_cloud = rs.pointcloud()
     points = rs.points()
 
     # Obtain point cloud data
-    pc.map_to(color_image)
-    points = pc.calculate(depth_image)
+    point_cloud.map_to(color_image)
+    points = point_cloud.calculate(depth_image)
 
     # Convert point cloud to 2d Array
     points3d = np.asanyarray(points.get_vertices())
@@ -27,6 +28,7 @@ def get_pointcloud(depth_image, color_image):
     # Remove all invalid data within a certain distance
     distance_mask = points3d[:, 2] > 3
     points3d = points3d[distance_mask]
+    # points_df = pd.DataFrame(data=points3d, columns=['x', 'y', 'z'])
 
     return points3d
 
@@ -40,6 +42,9 @@ def play_bag(filename):
     config.enable_all_streams()
 
     profile = pipeline.start(config)
+
+    prev_cloud = []
+    points = []
 
     try:
         while True:
@@ -77,8 +82,17 @@ def play_bag(filename):
             images = np.hstack((get_ORB(color_data), depth_colormap))
 
             cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+            prev_cloud = points
             points = get_pointcloud(depth_frame, color_frame)
-            print(points)
+            retval, residual, pose = [None] * 3, [None] * 3, [None] * 3
+            if len(prev_cloud) > 100 and len(points) > 100:
+                for i in range(3):
+                    icp = cv2.ppf_match_3d_ICP(20)
+                    retval[i], residual[i], pose[i] = icp.registerModelToScene(points, prev_cloud)
+            print(pose)
+
+
+            # point_cloud.plot()
             cv2.imshow('RealSense', images)
             # cv2.imshow('Realsense', depth_colormap)
             cv2.waitKey(1)
