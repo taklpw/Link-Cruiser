@@ -1,16 +1,12 @@
 import numpy as np
 import cv2
 import pyrealsense2 as rs
-import pandas as pd
 
-
-def get_ORB(image):
+def get_ORB(color_data):
     orb = cv2.ORB_create()
-    key_points = orb.detect(image, None)
-    key_points, descriptors = orb.compute(image, key_points)
-
-    orb_image = cv2.drawKeypoints(image, key_points, None, color=(0, 255, 0), flags=0)
-    return orb_image
+    key_points = orb.detect(color_data, None)
+    key_points, descriptors = orb.compute(color_data, key_points)
+    return key_points, descriptors
 
 
 def get_pointcloud(depth_image, color_image):
@@ -28,7 +24,6 @@ def get_pointcloud(depth_image, color_image):
     # Remove all invalid data within a certain distance
     distance_mask = points3d[:, 2] > 3
     points3d = points3d[distance_mask]
-    # points_df = pd.DataFrame(data=points3d, columns=['x', 'y', 'z'])
 
     return points3d
 
@@ -42,9 +37,6 @@ def play_bag(filename):
     config.enable_all_streams()
 
     profile = pipeline.start(config)
-
-    prev_cloud = []
-    points = []
 
     try:
         while True:
@@ -62,7 +54,6 @@ def play_bag(filename):
             depth_sensor = profile.get_device().first_depth_sensor()
             depth_scale = depth_sensor.get_depth_scale()
 
-
             # If their is either no depth or color frame try again
             if not depth_frame or not color_frame:
                 continue
@@ -70,7 +61,6 @@ def play_bag(filename):
             # Get data as numpy arrays
             depth_data = np.asanyarray(depth_frame.as_frame().get_data())
             color_data = np.asanyarray(color_frame.as_frame().get_data())
-            # color_data = cv2.resize(color_data, (1280, 720))
             color_data = cv2.cvtColor(color_data, cv2.COLOR_RGB2BGR)
 
             # Display depth frame
@@ -79,22 +69,16 @@ def play_bag(filename):
                 cv2.COLORMAP_JET
             )
 
-            images = np.hstack((get_ORB(color_data), depth_colormap))
+            # Get ORB Points
+            key_points, descriptors = get_ORB(color_data)
+            orb_image = cv2.drawKeypoints(color_data, key_points, None, color=(0, 255, 0), flags=0)
 
+            # Match Feature Points
+
+            # Show Video
+            images = np.hstack((orb_image, depth_colormap))
             cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
-            prev_cloud = points
-            points = get_pointcloud(depth_frame, color_frame)
-            retval, residual, pose = [None] * 3, [None] * 3, [None] * 3
-            if len(prev_cloud) > 100 and len(points) > 100:
-                for i in range(3):
-                    icp = cv2.ppf_match_3d_ICP(20)
-                    retval[i], residual[i], pose[i] = icp.registerModelToScene(points, prev_cloud)
-            print(pose)
-
-
-            # point_cloud.plot()
             cv2.imshow('RealSense', images)
-            # cv2.imshow('Realsense', depth_colormap)
             cv2.waitKey(1)
     finally:
         pipeline.stop()
