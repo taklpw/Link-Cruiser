@@ -82,12 +82,14 @@ def play_bag(filename):
         depth_data = np.asanyarray(depth_frame.as_frame().get_data())
         color_data = np.asanyarray(color_frame.as_frame().get_data())
         color_data = cv2.cvtColor(color_data, cv2.COLOR_RGB2BGR)
+        color_data = color_data[:, 40:, :]
 
         # Display depth frame
         depth_colormap = cv2.applyColorMap(
             cv2.convertScaleAbs(depth_data, alpha=0.08),
             cv2.COLORMAP_JET
         )
+        depth_colormap = depth_colormap[:, 40:, :]
 
         # Get ORB Points
         if key_points is not None:
