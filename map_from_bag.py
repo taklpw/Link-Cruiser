@@ -110,6 +110,16 @@ def play_bag(filename):
                 outImg=None
             )
 
+        # Essential Matrix
+        camera_matrix = np.array([
+            [color_intrinsics.fx, 0, color_intrinsics.ppx],
+            [0, color_intrinsics.fy, color_intrinsics.ppy],
+            [0, 0, 1]
+        ])
+        # essential_matrix = cv2.findEssentialMat(points1=old_key_points, points2=key_points,
+        #                                         cameraMatrix=camera_matrix, method='RANSAC'
+        #                                         )
+
         # Show Video
         images = np.hstack((orb_image, depth_colormap))
         cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
