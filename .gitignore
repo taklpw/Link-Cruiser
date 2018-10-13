@@ -112,3 +112,4 @@ venv.bak/
 # Misc
 *.ply
 *.whl
+*.bt
