@@ -97,10 +97,37 @@ def play_bag(filename):
         if descriptors is not None:
             old_descriptors = descriptors
         key_points, descriptors = get_ORB(color_data)
-        orb_image = cv2.drawKeypoints(color_data, key_points, None, color=(0, 255, 0), flags=0)
+        orb_image = None
 
         # Match Feature Points
         matches = match_features(old_descriptors, descriptors)
+
+        # Get pixel coordinates of matches
+        # old_img_match_coords = []
+        # new_img_match_coords = []
+        key_depth_img = np.empty(depth_data.shape)
+        points = []
+        if old_color_img is not None:
+            for match in matches[:10]:
+                # old_img_idx = match.queryIdx
+                new_img_idx = match.trainIdx
+                # (x_old, y_old) = old_key_points[old_img_idx].pt
+                (x_new, y_new) = key_points[new_img_idx].pt
+                x_new = round(x_new)
+                y_new = round(y_new)
+                # old_img_match_coords.append((round(x_old), round(y_old)))
+                # new_img_match_coords.append((round(x_new), round(y_new)))
+                # points.append(depth_frame.get_distance(x_new, y_new))
+                points.append(
+                    rs.rs2_deproject_pixel_to_point(
+                        depth_intrinsics,
+                        depth_data[x_new, y_new],
+                        depth_scale
+                    )
+                )
+                # key_depth_img[x_new, y_new] = depth_data[x_new, y_new]
+            print(points)
+
         if old_color_img is not None:
             orb_image = cv2.drawMatches(
                 img1=old_color_img, keypoints1=old_key_points,
@@ -109,6 +136,7 @@ def play_bag(filename):
                 flags=2,
                 outImg=None
             )
+
 
         # Essential Matrix
         camera_matrix = np.array([
@@ -121,10 +149,11 @@ def play_bag(filename):
         #                                         )
 
         # Show Video
-        images = np.hstack((orb_image, depth_colormap))
-        cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
-        cv2.imshow('RealSense', images)
-        cv2.waitKey(1)
+        if orb_image is not None:
+            images = np.hstack((orb_image, depth_colormap))
+            cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+            cv2.imshow('RealSense', images)
+            cv2.waitKey(1)
     pipeline.stop()
 
 
