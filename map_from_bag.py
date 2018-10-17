@@ -51,7 +51,10 @@ def play_bag(filename):
     descriptors = None
     color_data = None
     old_color_img = None
+    points = np.empty(shape=(10, 3))
+    old_points = np.empty(shape=(10, 3))
     frame_num = 0
+    second_frame = False
     while True:
         # Get frame from bag
         frames = pipeline.wait_for_frames()
@@ -103,30 +106,30 @@ def play_bag(filename):
         matches = match_features(old_descriptors, descriptors)
 
         # Get pixel coordinates of matches
-        # old_img_match_coords = []
-        # new_img_match_coords = []
-        key_depth_img = np.empty(depth_data.shape)
-        points = []
         if old_color_img is not None:
-            for match in matches[:10]:
-                # old_img_idx = match.queryIdx
+            old_points = points
+            points = np.empty(shape=(10, 3))
+            for i, match in enumerate(matches[:10]):
                 new_img_idx = match.trainIdx
-                # (x_old, y_old) = old_key_points[old_img_idx].pt
-                (x_new, y_new) = key_points[new_img_idx].pt
-                x_new = round(x_new)
-                y_new = round(y_new)
-                # old_img_match_coords.append((round(x_old), round(y_old)))
-                # new_img_match_coords.append((round(x_new), round(y_new)))
-                # points.append(depth_frame.get_distance(x_new, y_new))
-                points.append(
-                    rs.rs2_deproject_pixel_to_point(
+                (y_new, x_new) = key_points[new_img_idx].pt
+                depth_pixel = [round(x_new), round(y_new)]
+                depth_value = depth_data[depth_pixel[0], depth_pixel[1]]
+                points[i, :] = rs.rs2_deproject_pixel_to_point(
                         depth_intrinsics,
-                        depth_data[x_new, y_new],
-                        depth_scale
+                        depth_pixel,
+                        depth_scale*depth_value
                     )
-                )
-                # key_depth_img[x_new, y_new] = depth_data[x_new, y_new]
-            print(points)
+
+            # Get Affine transform between the two points
+            retval, Rt, inliters = cv2.estimateAffine3D(old_points, points)
+            if retval:
+                print(Rt)
+                print("----------")
+                transformation_matrix = Rt[:, 3]
+                scale_matrix = np.array([np.linalg.norm(Rt[:, 0]), np.linalg.norm(Rt[:, 1]), np.linalg.norm(Rt[:, 2])])
+                # rotation_matrix = Rt[]
+                print(scale_matrix)
+                print("===========")
 
         if old_color_img is not None:
             orb_image = cv2.drawMatches(
@@ -154,6 +157,9 @@ def play_bag(filename):
             cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
             cv2.imshow('RealSense', images)
             cv2.waitKey(1)
+
+        second_frame = True
+
     pipeline.stop()
 
 
