@@ -35,6 +35,22 @@ def get_pointcloud(depth_image, color_image):
     return points3d
 
 
+def get_transform(old_points, new_points, old_depth, new_depth):
+    R = None
+    t = None
+
+    # Get 3d points in old image
+
+
+    # Get 3d points in new image
+
+
+    # Perform rigid affine transform to obtain transformation matrix
+
+
+    return R, t
+
+
 def play_bag(filename):
     pipeline = rs.pipeline()
 
@@ -49,12 +65,19 @@ def play_bag(filename):
     old_descriptors = None
     key_points = None
     descriptors = None
+
     color_data = None
-    old_color_img = None
+    old_color_data = None
+
+    depth_data = None
+    old_depth_data = None
+
     points = np.empty(shape=(30, 3))
     old_points = np.empty(shape=(30, 3))
+
     frame_num = 0
     frames_proccessed = 0
+
     locations = np.array([[0, 0, 0]])
     location = np.array([0, 0, 0])
     while True:
@@ -83,7 +106,7 @@ def play_bag(filename):
 
         # Get data as numpy arrays
         if color_data is not None:
-            old_color_img = color_data
+            old_color_data = color_data
         depth_data = np.asanyarray(depth_frame.as_frame().get_data())
         color_data = np.asanyarray(color_frame.as_frame().get_data())
         color_data = cv2.cvtColor(color_data, cv2.COLOR_RGB2BGR)
@@ -107,8 +130,10 @@ def play_bag(filename):
         # Match Feature Points
         matches = match_features(old_descriptors, descriptors)
 
+        # R, t = get_transform(old_points, new_points, old_depth, new_depth);
+
         # Get pixel coordinates of matches
-        if old_color_img is not None:
+        if old_color_data is not None:
             old_points = points
             points = np.empty(shape=(30, 3))
             for i, match in enumerate(matches[:30]):
@@ -129,14 +154,13 @@ def play_bag(filename):
             retval, Rt, inliters = cv2.estimateAffine3D(old_points, points)
             if retval:
                 transformation_matrix = Rt[:, 3]
-                # scale_matrix = np.array([np.linalg.norm(Rt[:, 0]), np.linalg.norm(Rt[:, 1]), np.linalg.norm(Rt[:, 2])])
                 rotation_matrix = Rt[:, 0:2]
                 location = np.transpose(rotation_matrix) * location + transformation_matrix
                 locations = np.concatenate((locations, location))
 
-        if old_color_img is not None:
+        if old_color_data is not None:
             orb_image = cv2.drawMatches(
-                img1=old_color_img, keypoints1=old_key_points,
+                img1=old_color_data, keypoints1=old_key_points,
                 img2=color_data, keypoints2=key_points,
                 matches1to2=matches[:30],
                 flags=2,
