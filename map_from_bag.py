@@ -5,53 +5,6 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
 
-def get_ORB(color_data):
-    orb = cv2.ORB_create(nfeatures=1000)
-    key_points, descriptors = orb.detectAndCompute(color_data, None,)
-    return key_points, descriptors
-
-
-def match_features(old_descriptors, new_descriptors, old_points, new_points):
-    # Get matches with FLANN
-    # FLAAN_INDEX_LSH = 6
-    # index_params = dict(algorithm=FLAAN_INDEX_LSH,
-    #                     table_number=6,
-    #                     key_size=12,
-    #                     multi_probe_level=1)
-    # FLANN_INDEX_KDTREE = 1
-    # index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-    #
-    # search_params = dict(checks=50)
-    # flann = cv2.FlannBasedMatcher(index_params, search_params)
-    # matches = flann.knnMatch(old_descriptors, new_descriptors, k=2)
-    #
-    # # Only store good matches
-    # matches_mask = [[0, 0] for i in range(len(matches))]
-    #
-    # good_matches = []
-    # # Apply Lowe's criteria
-    # for i, (m, n) in enumerate(matches):
-    #     if m.distance < 0.7 * n.distance:
-    #         good_matches.append(matches[i])
-    #         matches_mask[i] = [1, 0]
-    # good_matches = np.array(good_matches)
-    #
-    # src_pts = np.float32([old_points[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-    # dst_pts = np.float32([new_points[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-    # M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-    #
-    # good_matches = [good_match for i, good_match in enumerate(good_matches) if mask[i] == 1]
-
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(old_descriptors, new_descriptors)
-    matches = sorted(matches, key=lambda x: x.distance)
-    src_pts = np.float32([old_points[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-    dst_pts = np.float32([new_points[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-    good_matches = [match for i, match in enumerate(matches) if mask[i] == 1]
-    return good_matches
-
-
 def get_pointcloud(depth_image, color_image):
     point_cloud = rs.pointcloud()
     points = rs.points()
@@ -69,55 +22,6 @@ def get_pointcloud(depth_image, color_image):
     points3d = points3d[distance_mask]
 
     return points3d
-
-
-def get_transform(old_points, new_points, matches, points_to_match, depth_scale, old_depth, new_depth, old_intr, new_intr):
-    old_3d = np.zeros(shape=(len(matches), 3))
-    new_3d = np.zeros(shape=(len(matches), 3))
-    indices_to_remove = []
-    for i, match in enumerate(matches):
-        # Get 3d points in old image
-        old_img_idx = match.queryIdx
-        (y_old, x_old) = old_points[old_img_idx].pt
-        old_depth_pixel = [round(x_old), round(y_old)]
-        old_depth_value = old_depth[old_depth_pixel[0], old_depth_pixel[1]]
-        if old_depth_value == 0:
-            indices_to_remove.append(i)
-            continue
-        old_3d[i, :] = rs.rs2_deproject_pixel_to_point(
-                        old_intr,
-                        old_depth_pixel,
-                        depth_scale*old_depth_value
-                        )
-
-        # Get 3d points in new image
-        new_img_idx = match.trainIdx
-        (y_new, x_new) = new_points[new_img_idx].pt
-        new_depth_pixel = [round(x_new), round(y_new)]
-        new_depth_value = new_depth[new_depth_pixel[0], new_depth_pixel[1]]
-        if new_depth_value == 0:
-            indices_to_remove.append(i)
-            continue
-        new_3d[i, :] = rs.rs2_deproject_pixel_to_point(
-                        new_intr,
-                        new_depth_pixel,
-                        depth_scale*new_depth_value
-                        )
-
-    # Remove invalid indices
-    np.delete(old_3d, indices_to_remove)
-    np.delete(new_3d, indices_to_remove)
-    old_3d = old_3d.astype(np.float32)
-    new_3d = new_3d.astype(np.float32)
-
-    # Perform ICP to obtain transformation matrix
-    icp = cv2.ppf_match_3d_ICP(50)
-    try:
-        retval, residual, t = icp.registerModelToScene(old_3d, new_3d)
-    except:
-        t = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-
-    return t
 
 
 def play_bag(filename):
@@ -142,11 +46,11 @@ def play_bag(filename):
 
     frame_num = 0
     frames_processed = 0
-    frames_to_skip = 7
+    frames_to_skip = 1
     points_to_match = 30
 
-    locations = np.array([[0, 0, 0, 1]])
-    location = np.array([0, 0, 0, 1])
+    locations = np.array([[0, 0, 0]])
+    location = np.array([[0], [0], [0], [1]])
     while True:
         # Get frame from bag
         frames = pipeline.wait_for_frames()
@@ -162,6 +66,7 @@ def play_bag(filename):
         frames = align.process(frames)
 
         # Obtain depth and colour frames
+        # TODO: process depth frame
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
 
@@ -192,6 +97,11 @@ def play_bag(filename):
             new_color_data = cv2.cvtColor(new_color_data, cv2.COLOR_RGB2BGR)
             new_depth_data = np.asanyarray(depth_frame.get_data())
 
+            # Rescale if too big
+            if new_color_data.shape != (480, 640, 3) or new_depth_data != (480, 640):
+                new_color_data = cv2.resize(new_color_data, (640, 480))
+                new_depth_data = cv2.resize(new_depth_data, (640, 480))
+
             # Colorize depth data
             depth_colormap = cv2.applyColorMap(
                 cv2.convertScaleAbs(new_depth_data, alpha=0.08),
@@ -200,51 +110,38 @@ def play_bag(filename):
             depth_colormap = np.asanyarray(depth_colormap)
             depth_colormap = depth_colormap[:, 40:, :]
 
-            # Get ORB Points
-            new_key_points, new_descriptors = get_ORB(new_color_data)
-            # new_descriptors = np.array(new_descriptors).astype(np.float32)
-
             if frames_processed:
-                # Match Feature Points
-                matches = match_features(old_descriptors, new_descriptors, old_key_points, new_key_points)
                 # Get absolute orientation
-                t = get_transform(old_key_points, new_key_points,
-                                  matches, points_to_match, depth_scale,
-                                  old_depth_data, new_depth_data,
-                                  old_depth_intrinsics, new_depth_intrinsics
-                                  )
-                # location = np.transpose(R) * location + t
-                location = t * location
-                location = location[:, 3]
-                location.reshape((-1, 1))
-                locations = np.vstack([locations, location])
+                camera_matrix = np.array([
+                    [color_intrinsics.fx, 0, color_intrinsics.ppx],
+                    [0, color_intrinsics.fy, color_intrinsics.ppy],
+                    [0, 0, 1]
+                ])
+                odom = cv2.rgbd.RgbdOdometry_create(camera_matrix)
+                # TODO:  replace 0's with NaN's in depth data
+                srcmask = np.ones_like(old_depth_data, dtype=np.uint8)
+                dstmask = np.ones_like(new_depth_data, dtype=np.uint8)
+                old_gray = cv2.cvtColor(old_color_data, cv2.COLOR_RGB2GRAY)
+                new_gray = cv2.cvtColor(new_color_data, cv2.COLOR_RGB2GRAY)
+                old_depth_data_scaled = (old_depth_data*depth_scale).astype(np.float32)
+                new_depth_data_scaled = (new_depth_data*depth_scale).astype(np.float32)
 
-                # Get pointcloud and perform transformation
-                point_cloud = get_pointcloud(depth_frame, color_frame)
-
-            if frames_processed:
-                orb_image = cv2.drawMatches(
-                    img1=old_color_data, keypoints1=old_key_points,
-                    img2=new_color_data, keypoints2=new_key_points,
-                    matches1to2=matches,
-                    flags=2,
-                    outImg=None
+                retval, Rt = odom.compute(
+                    srcImage=old_gray, srcDepth=old_depth_data_scaled,
+                    srcMask=srcmask,
+                    dstImage=new_gray, dstDepth=new_depth_data_scaled,
+                    dstMask=dstmask
                 )
 
+                location = np.dot(Rt, location)
+                locations = np.vstack([locations, location[0:3].T])
 
-            # Essential Matrix
-            # camera_matrix = np.array([
-            #     [color_intrinsics.fx, 0, color_intrinsics.ppx],
-            #     [0, color_intrinsics.fy, color_intrinsics.ppy],
-            #     [0, 0, 1]
-            # ])
-            # essential_matrix = cv2.findEssentialMat(points1=old_key_points, points2=key_points,
-            #                                         cameraMatrix=camera_matrix, method='RANSAC'
-            #                                         )
+                # Get pointcloud and perform transformation
+                # point_cloud = get_pointcloud(depth_frame, color_frame)
 
             # Show Video
             if frames_processed:
-                images = np.hstack((orb_image, depth_colormap))
+                images = np.hstack((new_color_data, depth_colormap))
                 cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
                 cv2.imshow('RealSense', images)
                 cv2.waitKey(1)
@@ -255,8 +152,13 @@ def play_bag(filename):
     pipeline.stop()
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(locations[:, 0], locations[:, 1], locations[:, 2])
+    cols = np.arange(len(locations))
+    ax.scatter(locations[:, 0], locations[:, 1], locations[:, 2], c=cols)
+    ax.set_xlabel('X axis')
+    ax.set_ylabel('Y axis')
+    ax.set_zlabel('Z axis')
+
     plt.show()
 
 if __name__ == '__main__':
-    play_bag('kellysroom.bag')
+    play_bag('hallway.bag')
