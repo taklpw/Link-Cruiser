@@ -1,8 +1,9 @@
 import numpy as np
 import cv2
 import pyrealsense2 as rs
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
+from pyqtgraph.Qt import QtCore, QtGui
+import pyqtgraph.opengl as gl
+import sys
 
 
 def get_pointcloud(depth_image, color_image):
@@ -16,21 +17,36 @@ def get_pointcloud(depth_image, color_image):
     # Convert point cloud to 2d Array
     points3d = np.asanyarray(points.get_vertices())
     points3d = points3d.view(np.float32).reshape(points3d.shape + (-1,))
+    texture_coords = np.asanyarray(points.get_texture_coordinates())
+    texture_coords = texture_coords.view(np.float32).reshape(texture_coords.shape + (-1,))
 
     # Remove all invalid data within a certain distance
-    distance_mask = points3d[:, 2] > 3
+    long_distance_mask = points3d[:, 2] < 10
+    short_distance_mask = points3d[:, 2] > 0.3
+    distance_mask = np.logical_and(long_distance_mask, short_distance_mask)
     points3d = points3d[distance_mask]
 
-    return points3d
+    # Sample random points
+    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/100))
+    sampled_points = points3d[idx, :]
+
+    # Add extra column of 0's to 3d points
+    z = np.ones((sampled_points.shape[0], 1))
+    sampled_points = np.hstack((sampled_points, z))
+
+    return sampled_points
 
 
 def play_bag(filename):
-    # Setup visualisation
-    # canvas = scene.SceneCanvas(keys='interactive')
-    # view = canvas.central_widget.add_view()
-    # # view.set_camera('turntable', mode='perspective', up='y')
-    # p1 = scene.visuals.Markers()
-
+    # Set visualisation
+    app = QtGui.QApplication(sys.argv)
+    w = gl.GLViewWidget()
+    w.opts['distance'] = 20
+    w.show()
+    w.setWindowTitle('Complete Points')
+    w.resize(800, 800)
+    g = gl.GLGridItem()
+    w.addItem(g)
 
     # Configure options and start stream
     pipeline = rs.pipeline()
@@ -53,6 +69,7 @@ def play_bag(filename):
 
     locations = np.array([[0, 0, 0]])
     location = np.array([[0], [0], [0], [1]])
+    all_points = np.array([0, 0, 0])
     while True:
         # Get frame from bag
         frames = pipeline.wait_for_frames()
@@ -108,14 +125,13 @@ def play_bag(filename):
             if new_color_data.shape != new_depth_data.shape:
                 new_color_data = cv2.resize(new_color_data, (new_depth_data.shape[1], new_depth_data.shape[0]))
 
-
             # Colorize depth data
             depth_colormap = cv2.applyColorMap(
                 cv2.convertScaleAbs(new_depth_data, alpha=0.08),
                 cv2.COLORMAP_JET
             )
             depth_colormap = np.asanyarray(depth_colormap)
-            depth_colormap = depth_colormap[:, 40:, :]
+            # depth_colormap = depth_colormap[:, 40:, :]
 
             if frames_processed:
                 # Get absolute orientation
@@ -155,11 +171,15 @@ def play_bag(filename):
                 # if abs(locations[frames_processed-1] - locations[frames_processed]) > 0.5:
                 #     pass
                 locations = np.vstack([locations, location[0:3].T])
-                print(location[0:3].T)
 
                 # Get pointcloud and perform transformation
                 point_cloud = get_pointcloud(depth_frame, color_frame)
-
+                t_point_cloud = np.dot(Rt, point_cloud.T)
+                t_point_cloud = t_point_cloud[0:3, :].T
+                all_points = np.vstack((all_points, t_point_cloud))
+                p = gl.GLScatterPlotItem(pos=all_points, size=1)
+                w.addItem(p)
+                w.show()
 
             # Show Video
             if frames_processed:
@@ -170,17 +190,12 @@ def play_bag(filename):
 
         frames_processed += 1
 
-    print(locations)
     pipeline.stop()
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    cols = np.arange(len(locations))
-    ax.scatter(locations[:, 0], locations[:, 1], locations[:, 2], c=cols)
-    ax.set_xlabel('X axis')
-    ax.set_ylabel('Y axis')
-    ax.set_zlabel('Z axis')
-    plt.show()
+
+    t = QtCore.QTimer()
+    t.start(50)
+
 
 
 if __name__ == '__main__':
-    play_bag('tronLab.bag')
+    play_bag('tronstairs.bag')
