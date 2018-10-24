@@ -1,17 +1,22 @@
 import numpy as np
 import cv2
 import pyrealsense2 as rs
+import pyqtgraph.colormap
 from pyqtgraph.Qt import QtCore, QtGui
 import pyqtgraph.opengl as gl
 import sys
 
 
-def get_pointcloud(depth_image, color_image):
+# Initialise OpenGL app
+app = QtGui.QApplication(sys.argv)
+
+
+def get_pointcloud(depth_image, color_frame, img, img_size):
     point_cloud = rs.pointcloud()
     points = rs.points()
 
     # Obtain point cloud data
-    point_cloud.map_to(color_image)
+    point_cloud.map_to(color_frame)
     points = point_cloud.calculate(depth_image)
 
     # Convert point cloud to 2d Array
@@ -25,21 +30,37 @@ def get_pointcloud(depth_image, color_image):
     short_distance_mask = points3d[:, 2] > 0.3
     distance_mask = np.logical_and(long_distance_mask, short_distance_mask)
     points3d = points3d[distance_mask]
+    texture_coords = texture_coords[distance_mask]
+
+    # Get colours
+    u_coords = ((texture_coords[:, 0])*img_size[0])
+    u_coords = np.round(np.clip(u_coords, a_min=0, a_max=img_size[0]-1))
+    v_coords = ((texture_coords[:, 1])*img_size[1])
+    v_coords = np.round(np.clip(v_coords, a_min=0, a_max=img_size[1]-1))
+    uv_coords = np.vstack((u_coords, v_coords)).T.astype(np.uint16)
 
     # Sample random points
-    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/100))
+    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/10))
     sampled_points = points3d[idx, :]
+    uv_coords = uv_coords[idx, :]
 
     # Add extra column of 0's to 3d points
-    z = np.ones((sampled_points.shape[0], 1))
-    sampled_points = np.hstack((sampled_points, z))
+    o = np.ones((sampled_points.shape[0], 1))
+    sampled_points = np.hstack((sampled_points, o))
 
-    return sampled_points
+    # Get colours of points
+    point_colors = []
+    for i, coord in enumerate(uv_coords):
+        cols = img[coord[0], coord[1], :]
+        point_colors.append(cols)
+
+    point_colors = np.array(point_colors)
+
+    return sampled_points, point_colors
 
 
 def play_bag(filename):
     # Set visualisation
-    app = QtGui.QApplication(sys.argv)
     w = gl.GLViewWidget()
     w.opts['distance'] = 20
     w.show()
@@ -66,10 +87,12 @@ def play_bag(filename):
     frame_num = 0
     frames_processed = 0
     frames_to_skip = 1
+    img_size = None
 
     locations = np.array([[0, 0, 0]])
     location = np.array([[0], [0], [0], [1]])
     all_points = np.array([0, 0, 0])
+    all_colors = None
     while True:
         # Get frame from bag
         frames = pipeline.wait_for_frames()
@@ -124,6 +147,7 @@ def play_bag(filename):
             # Ressize color image to depth size
             if new_color_data.shape != new_depth_data.shape:
                 new_color_data = cv2.resize(new_color_data, (new_depth_data.shape[1], new_depth_data.shape[0]))
+                img_size = new_depth_data.shape
 
             # Colorize depth data
             depth_colormap = cv2.applyColorMap(
@@ -173,11 +197,21 @@ def play_bag(filename):
                 locations = np.vstack([locations, location[0:3].T])
 
                 # Get pointcloud and perform transformation
-                point_cloud = get_pointcloud(depth_frame, color_frame)
+                point_cloud, point_colors = get_pointcloud(depth_frame, color_frame, new_color_data, img_size)
                 t_point_cloud = np.dot(Rt, point_cloud.T)
                 t_point_cloud = t_point_cloud[0:3, :].T
                 all_points = np.vstack((all_points, t_point_cloud))
-                p = gl.GLScatterPlotItem(pos=all_points, size=1)
+
+                # Make colormap
+                if all_colors is None:
+                    all_colors = point_colors
+                else:
+                    np.vstack((all_colors, point_colors))
+                cmap = pyqtgraph.colormap.ColorMap(pos=all_points, color=all_colors)
+
+                p = gl.GLScatterPlotItem(pos=all_points, size=1)#, color=all_colors)
+                # Rotate set of points by 90 degrees
+                p.rotate(45, x=1, y=0, z=0)
                 w.addItem(p)
                 w.show()
 
@@ -191,11 +225,9 @@ def play_bag(filename):
         frames_processed += 1
 
     pipeline.stop()
-
-    t = QtCore.QTimer()
-    t.start(50)
-
+    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
     play_bag('tronstairs.bag')
+    app.exec_()
