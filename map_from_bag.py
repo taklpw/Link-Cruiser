@@ -40,7 +40,7 @@ def get_pointcloud(depth_image, color_frame, img, img_size):
     uv_coords = np.vstack((u_coords, v_coords)).T.astype(np.uint16)
 
     # Sample random points
-    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/10))
+    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/500))
     sampled_points = points3d[idx, :]
     uv_coords = uv_coords[idx, :]
 
@@ -91,7 +91,7 @@ def play_bag(filename):
 
     locations = np.array([[0, 0, 0]])
     location = np.array([[0], [0], [0], [1]])
-    all_points = np.array([0, 0, 0])
+    all_points = None
     all_colors = None
     while True:
         # Get frame from bag
@@ -200,18 +200,19 @@ def play_bag(filename):
                 point_cloud, point_colors = get_pointcloud(depth_frame, color_frame, new_color_data, img_size)
                 t_point_cloud = np.dot(Rt, point_cloud.T)
                 t_point_cloud = t_point_cloud[0:3, :].T
-                all_points = np.vstack((all_points, t_point_cloud))
+                # all_points = np.vstack((all_points, t_point_cloud))
 
                 # Make colormap
-                if all_colors is None:
-                    all_colors = point_colors
+                if all_points is None or all_colors is None:
+                    all_colors = np.copy(point_colors)
+                    all_points = np.copy(t_point_cloud)
                 else:
-                    np.vstack((all_colors, point_colors))
-                cmap = pyqtgraph.colormap.ColorMap(pos=all_points, color=all_colors)
+                    all_colors = np.vstack((all_colors, point_colors))
+                    all_points = np.vstack((all_points, t_point_cloud))
 
-                p = gl.GLScatterPlotItem(pos=all_points, size=1)#, color=all_colors)
+                p = gl.GLScatterPlotItem(pos=all_points, size=2, color=all_colors/255, pxMode=True)
                 # Rotate set of points by 90 degrees
-                p.rotate(45, x=1, y=0, z=0)
+                p.rotate(180, x=1, y=1, z=1)
                 w.addItem(p)
                 w.show()
 
@@ -229,5 +230,5 @@ def play_bag(filename):
 
 
 if __name__ == '__main__':
-    play_bag('tronstairs.bag')
+    play_bag('kellysroom.bag')
     app.exec_()
