@@ -30,36 +30,19 @@ def get_pointcloud(depth_image, color_frame, img, img_size):
     short_distance_mask = points3d[:, 2] > 0.3
     distance_mask = np.logical_and(long_distance_mask, short_distance_mask)
     points3d = points3d[distance_mask]
-    texture_coords = texture_coords[distance_mask]
-
-    # Get colours
-    u_coords = ((texture_coords[:, 0])*img_size[0])
-    u_coords = np.round(np.clip(u_coords, a_min=0, a_max=img_size[0]-1))
-    v_coords = ((texture_coords[:, 1])*img_size[1])
-    v_coords = np.round(np.clip(v_coords, a_min=0, a_max=img_size[1]-1))
-    uv_coords = np.vstack((u_coords, v_coords)).T.astype(np.uint16)
 
     # Sample random points
-    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/500))
+    idx = np.random.randint(points3d.shape[0], size=round(points3d.shape[0]/100))
     sampled_points = points3d[idx, :]
-    uv_coords = uv_coords[idx, :]
-
-    # Add extra column of 0's to 3d points
-    o = np.ones((sampled_points.shape[0], 1))
-    sampled_points = np.hstack((sampled_points, o))
 
     # Get colours of points
     point_colors = []
-    for i, coord in enumerate(uv_coords):
-        cols = img[coord[0], coord[1], :]
-        point_colors.append(cols)
-
     point_colors = np.array(point_colors)
 
     return sampled_points, point_colors
 
 
-def play_stream():
+def play_stream(run_name):
     # Set visualisation
     w = gl.GLViewWidget()
     w.opts['distance'] = 20
@@ -93,10 +76,22 @@ def play_stream():
 
     locations = np.array([[0, 0, 0]])
     location = np.array([[0], [0], [0], [1]])
+    rotation = np.eye(3)
+    rotations = None
+    translation = np.array([[0, 0, 0]])
     Rt = np.eye(4)
     all_points = None
     all_colors = None
     while True:
+        k = cv2.waitKey(1) & 0xFF
+        if k == ord('q'):
+            print('\nDone')
+            break
+        elif k == ord('s'):
+            print('\nDone')
+            np.savetxt(X=all_points, fname=run_name + '.txt', delimiter=',')
+            break
+
         # Get frame from bag
         frames = pipeline.wait_for_frames()
 
@@ -166,9 +161,8 @@ def play_stream():
                     [0, color_intrinsics.fy, color_intrinsics.ppy],
                     [0, 0, 1]
                 ])
-                odom = cv2.rgbd.RgbdICPOdometry_create(camera_matrix)
-
-                # Scale depth data
+                odom = cv2.rgbd.RgbdOdometry_create(cameraMatrix=camera_matrix, maxPointsPart=0.25, minDepth=0.3, maxDepth=10)
+               # Scale depth data
                 old_depth_data_scaled = (old_depth_data*depth_scale).astype(np.float32)
                 new_depth_data_scaled = (new_depth_data*depth_scale).astype(np.float32)
 
@@ -179,7 +173,7 @@ def play_stream():
 
                 dstmask = np.ones_like(new_depth_data, dtype=np.uint8)
                 dstmask[new_depth_data_scaled == 0] = 0
-                dstmask[new_depth_data_scaled > 10] = 0
+                # dstmask[new_depth_data_scaled > 10] = 0
 
                 old_gray = cv2.cvtColor(old_color_data, cv2.COLOR_BGR2GRAY)
                 new_gray = cv2.cvtColor(new_color_data, cv2.COLOR_BGR2GRAY)
@@ -205,13 +199,21 @@ def play_stream():
                 t = Rt[3, 0:3]
 
                 location = np.dot(Rt, location)
-                # if abs(locations[frames_processed-1] - locations[frames_processed]) > 0.5:
-                #     pass
                 locations = np.vstack([locations, location[0:3].T])
+                translation = translation - t
+
+                rotation = np.dot(R, rotation)
+                if rotations is None:
+                    rotations = rotation
+                else:
+                    rotations = np.dstack((rotations, rotation))
+
 
                 # Get pointcloud and perform transformation
                 point_cloud, point_colors = get_pointcloud(depth_frame, color_frame, new_color_data, img_size)
-                t_point_cloud = np.dot(Rt, point_cloud.T)
+                # t_point_cloud = np.dot(Rt, point_cloud.T)
+                t_point_cloud = np.dot(rotation, point_cloud.T) - translation.T
+
                 t_point_cloud = t_point_cloud[0:3, :].T
                 # all_points = np.vstack((all_points, t_point_cloud))
 
@@ -223,9 +225,12 @@ def play_stream():
                     all_colors = np.vstack((all_colors, point_colors))
                     all_points = np.vstack((all_points, t_point_cloud))
 
+                p = gl.GLScatterPlotItem(pos=all_points, size=1)
+                w.addItem(p)
+
                 p = gl.GLScatterPlotItem(pos=locations, size=2, color=(1,0,0,1), pxMode=True)
                 # Rotate set of points by 90 degrees
-                p.rotate(180, x=1, y=1, z=1)
+                # p.rotate(/180, x=1, y=1, z=1)
                 w.addItem(p)
                 w.show()
 
@@ -243,5 +248,6 @@ def play_stream():
 
 
 if __name__ == '__main__':
-    play_stream()
+    filename = input("Enter Filename: ")
+    play_stream(filename)
     app.exec_()
