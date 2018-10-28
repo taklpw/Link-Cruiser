@@ -10,3 +10,4 @@ Room mapping and floor plan generation
 * PyQtGraph
 * PyQt5
 * PyOpenGL
+* Open3D
