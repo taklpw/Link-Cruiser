@@ -7,6 +7,7 @@ Room mapping and floor plan generation
 * pyrealsense
 * opencvpython
 * numpy
+* joblib
 * PyQtGraph
 * PyQt5
 * PyOpenGL

@@ -214,7 +214,7 @@ def process_point_clouds(all_clouds):
 
 
 if __name__ == '__main__':
-    filename = 'kellysroom2.bag'
+    filename = 'backroom.bag'
     all_clouds = get_clouds(filename)
     combined_cloud = process_point_clouds(all_clouds)
     write_point_cloud(filename[:-4] + ".pcd", combined_cloud)
