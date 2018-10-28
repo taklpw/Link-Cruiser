@@ -114,3 +114,5 @@ venv.bak/
 *.whl
 *.bt
 *.pcd
+*.weights
+*.jpg

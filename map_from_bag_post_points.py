@@ -115,7 +115,7 @@ def full_registration(point_clouds, max_correspondence_distance_coarse, max_corr
     odometry = np.eye(4)
     pose_graph.nodes.append(PoseGraphNode(odometry))
     num_clouds = len(point_clouds)
-    look_forward = num_clouds
+    look_forward = 5
     total_comparisons = 0
     for i in range(num_clouds):
         end_look = 0

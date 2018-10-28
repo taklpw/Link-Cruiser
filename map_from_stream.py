@@ -1,14 +1,8 @@
 import numpy as np
 import cv2
 import pyrealsense2 as rs
-import pyqtgraph.colormap
-from pyqtgraph.Qt import QtCore, QtGui
-import pyqtgraph.opengl as gl
-import sys
-
-
-# Initialise OpenGL app
-app = QtGui.QApplication(sys.argv)
+from open3d import *
+from yolo_image import yolo_mask_create
 
 
 def get_pointcloud(depth_image, color_frame, img, img_size):
@@ -42,16 +36,7 @@ def get_pointcloud(depth_image, color_frame, img, img_size):
     return sampled_points, point_colors
 
 
-def play_stream(run_name):
-    # Set visualisation
-    w = gl.GLViewWidget()
-    w.opts['distance'] = 20
-    w.show()
-    w.setWindowTitle('Complete Points')
-    w.resize(800, 800)
-    g = gl.GLGridItem()
-    w.addItem(g)
-
+def play_stream(run_name, vis):
     # Configure options and start stream
     pipeline = rs.pipeline()
     config = rs.config()
@@ -67,6 +52,8 @@ def play_stream(run_name):
     old_depth_intrinsics = None
     new_color_data = None
     old_color_data = None
+    old_people_mask = None
+    new_people_mask = None
 
     frame_num = 0
     frames_processed = 0
@@ -82,6 +69,8 @@ def play_stream(run_name):
     Rt = np.eye(4)
     all_points = None
     all_colors = None
+    all_pcd = PointCloud()
+
     while True:
         k = cv2.waitKey(1) & 0xFF
         if k == ord('q'):
@@ -126,6 +115,7 @@ def play_stream(run_name):
             if frames_processed and not err_flag:
                 old_depth_data = new_depth_data
                 old_color_data = new_color_data
+                old_people_mask = new_people_mask
                 old_depth_intrinsics = new_depth_intrinsics
 
             # Intrinsicts and Extrinsics
@@ -162,7 +152,8 @@ def play_stream(run_name):
                     [0, 0, 1]
                 ])
                 odom = cv2.rgbd.RgbdOdometry_create(cameraMatrix=camera_matrix, maxPointsPart=0.25, minDepth=0.3, maxDepth=10)
-               # Scale depth data
+
+                # Scale depth data
                 old_depth_data_scaled = (old_depth_data*depth_scale).astype(np.float32)
                 new_depth_data_scaled = (new_depth_data*depth_scale).astype(np.float32)
 
@@ -173,12 +164,17 @@ def play_stream(run_name):
 
                 dstmask = np.ones_like(new_depth_data, dtype=np.uint8)
                 dstmask[new_depth_data_scaled == 0] = 0
-                # dstmask[new_depth_data_scaled > 10] = 0
+                dstmask[new_depth_data_scaled > 10] = 0
+
+                # Create Mask to ignore people
+                new_people_mask = yolo_mask_create(new_color_data)
 
                 old_gray = cv2.cvtColor(old_color_data, cv2.COLOR_BGR2GRAY)
                 new_gray = cv2.cvtColor(new_color_data, cv2.COLOR_BGR2GRAY)
                 old_depth_data_scaled[old_depth_data_scaled == 0] = np.nan
+                old_depth_data_scaled[old_people_mask == 0] = np.nan
                 new_depth_data_scaled[new_depth_data_scaled == 0] = np.nan
+                new_depth_data_scaled[new_people_mask == 0] = np.nan
 
                 retval, Rt = odom.compute(
                     srcImage=old_gray, srcDepth=old_depth_data_scaled,
@@ -217,6 +213,7 @@ def play_stream(run_name):
                 t_point_cloud = t_point_cloud[0:3, :].T
                 # all_points = np.vstack((all_points, t_point_cloud))
 
+
                 # Make colormap
                 if all_points is None or all_colors is None:
                     all_colors = np.copy(point_colors)
@@ -225,17 +222,38 @@ def play_stream(run_name):
                     all_colors = np.vstack((all_colors, point_colors))
                     all_points = np.vstack((all_points, t_point_cloud))
 
-                p = gl.GLScatterPlotItem(pos=all_points, size=1)
-                w.addItem(p)
+                voxel_size = 2
+                pcd = PointCloud()
+                pcd.points = Vector3dVector(t_point_cloud)
+                # Downsample
+                voxel_down_sample(pcd, voxel_size=voxel_size)
 
-                p = gl.GLScatterPlotItem(pos=locations, size=2, color=(1,0,0,1), pxMode=True)
+                # Recompute normals
+                estimate_normals(pcd, search_param=KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+
+                # Remove Outliers
+                cl, ind = statistical_outlier_removal(pcd, nb_neighbors=30, std_ratio=0.5)
+                pcd = select_down_sample(pcd, ind)
+                all_pcd += pcd
+
+                vis.add_geometry(pcd)
+                vis.update_geometry()
+                vis.poll_events()
+                vis.update_renderer()
+
+                # p = gl.GLScatterPlotItem(pos=all_points, size=1)
+                # w.addItem(p)
+
+                # p = gl.GLScatterPlotItem(pos=locations, size=2, color=(1,0,0,1), pxMode=True)
                 # Rotate set of points by 90 degrees
                 # p.rotate(/180, x=1, y=1, z=1)
-                w.addItem(p)
-                w.show()
+                # w.addItem(p)
+                # w.show()
 
             # Show Video
             if frames_processed:
+                idx = (new_people_mask == 0)
+                new_color_data[idx] = 0
                 images = np.hstack((new_color_data, depth_colormap))
                 cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
                 cv2.imshow('RealSense', images)
@@ -245,9 +263,22 @@ def play_stream(run_name):
 
     pipeline.stop()
     cv2.destroyAllWindows()
+    vis.destroy_window()
+
+    return all_pcd
 
 
 if __name__ == '__main__':
     filename = input("Enter Filename: ")
-    play_stream(filename)
-    app.exec_()
+    vis = Visualizer()
+    vis.create_window()
+    final = play_stream(filename, vis)
+
+    voxel_size = 10
+    # Downsample
+    uni_down_pcd = uniform_down_sample(final, every_k_points=5)
+    voxel_down_sample(final, voxel_size=voxel_size)
+    # Recompute normals
+    estimate_normals(final, search_param=KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+    draw_geometries([final])
+    # app.exec_()
