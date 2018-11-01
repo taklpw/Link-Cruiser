@@ -6,6 +6,7 @@ classes = None
 with open('yolov3.txt', 'r') as f:
     classes = [line.strip() for line in f.readlines()]
 COLORS = np.random.uniform(0, 255, size=(len(classes), 3))
+# net = cv2.dnn.readNet('yolov3-tiny.weights', 'yolov3-tiny.cfg')
 net = cv2.dnn.readNet('yolov3.weights', 'yolov3.cfg')
 
 
