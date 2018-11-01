@@ -3,6 +3,8 @@ import cv2
 import pyrealsense2 as rs
 from math import atan2
 from math import sqrt
+import matplotlib.pyplot as plt
+
 
 
 def play_bag(filename):
@@ -123,19 +125,60 @@ def play_bag(filename):
                 location = np.dot(Rt, location)
                 locations = np.vstack([locations, location[0:3].T])
                 rotation = np.dot(Rt, rotation)
-
-
-
-
+                # print(locations[:, 2])
 
         frames_processed += 1
+
     print('location \t', location)
     print('x rotation \t', atan2(rotation[2,1], rotation[2,2]))
     print('y rotation \t', atan2(-rotation[2,0], sqrt(rotation[2,1]**2 + rotation[2,2]**2)))
     print('z rotation \t', atan2(rotation[1,0], rotation[0,0]))
     pipeline.stop()
     cv2.destroyAllWindows()
+    return locations
 
 
 if __name__ == '__main__':
-    play_bag('frontback.bag')
+    print('------------')
+    print('Z')
+    Z = play_bag('frontback.bag')
+    plt.scatter(np.arange(len(Z[:, 2])), -Z[:, 2], color='blue', label='Z displacement', s=1)
+    plt.scatter(np.arange(len(Z[:, 1])), Z[:, 1], color='red', label='Y Displacement', s=1)
+    plt.scatter(np.arange(len(Z[:, 0])), Z[:, 0], color='green', label='X Displacement', s=1)
+    plt.grid()
+    plt.title('Displacement By Frame - Back/Forth Movement')
+    plt.ylabel('Z Displacement (m)')
+    plt.xlabel('Frame Number')
+    plt.legend()
+    plt.savefig('z_test.pdf', bbox_inches='tight')
+    plt.show()
+
+    print('------------')
+    print('Y')
+    Y = play_bag('updown.bag')
+    plt.scatter(np.arange(len(Y[:, 2])), -Y[:, 2], color='blue', label='Z displacement', s=1)
+    plt.scatter(np.arange(len(Y[:, 1])), Y[:, 1], color='red', label='Y Displacement', s=1)
+    plt.scatter(np.arange(len(Y[:, 0])), Y[:, 0], color='green', label='X Displacement', s=1)
+    plt.grid()
+    plt.title('Displacement By Frame - Up/Down Movement')
+    plt.ylabel('Y Displacement (m)')
+    plt.xlabel('Frame Number')
+    plt.legend()
+    plt.savefig('y_test.pdf', bbox_inches='tight')
+    plt.show()
+
+
+    print('------------')
+    print('X')
+    X = play_bag('leftright.bag')
+    plt.scatter(np.arange(len(X[:, 2])), -X[:, 2], color='blue', label='Z displacement', s=1)
+    plt.scatter(np.arange(len(X[:, 1])), X[:, 1], color='red', label='Y Displacement', s=1)
+    plt.scatter(np.arange(len(X[:, 0])), X[:, 0], color='green', label='X Displacement', s=1)
+    plt.grid()
+    plt.title('Displacement By Frame - Left/Right Movement')
+    plt.ylabel('X Displacement (m)')
+    plt.xlabel('Frame Number')
+    plt.legend()
+    plt.savefig('x_test.pdf', bbox_inches='tight')
+    plt.show()
+
