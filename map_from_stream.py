@@ -151,7 +151,7 @@ def play_stream(run_name, vis):
                     [0, color_intrinsics.fy, color_intrinsics.ppy],
                     [0, 0, 1]
                 ])
-                odom = cv2.rgbd.RgbdOdometry_create(cameraMatrix=camera_matrix, maxPointsPart=0.25, minDepth=0.3, maxDepth=10)
+                odom = cv2.rgbd.RgbdICPOdometry_create(cameraMatrix=camera_matrix, maxPointsPart=0.25, minDepth=0.3, maxDepth=10)
 
                 # Scale depth data
                 old_depth_data_scaled = (old_depth_data*depth_scale).astype(np.float32)
